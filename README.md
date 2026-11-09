@@ -1,85 +1,128 @@
 # School Admission System
 
-Onnorokom Projukti take-home assignment: first-come-first-served school admission with seat holds and mock fee payment.
+First-come-first-served school admission with temporary seat reservations and mock fee payment.
 
 ## Stack
 
-- **Backend:** .NET 8, PostgreSQL, EF Core (`backend/`)
-- **Frontend:** React 18, TypeScript, Vite (`frontend/`)
+- Backend: .NET 8, PostgreSQL, EF Core
+- Frontend: React 19, TypeScript, Vite
+- Browser tests: Playwright
 
-## Run with Docker (recommended)
+Each class/shift is a separate class with its own capacity. A student is identified by a 17-digit birth registration number; no login or real payment gateway is required.
 
-From the repository root:
+## Docker
 
-**PowerShell (Windows):**
+Start Docker Desktop on Windows, or Docker Engine on Linux, then run from the repository root:
 
-```powershell
-.\run.ps1
-```
-
-If `docker` is not recognized, Docker Desktop is not installed — see [docs/WINDOWS.md](docs/WINDOWS.md).
-
-**Linux / macOS / Git Bash:**
-
-```bash
+```sh
 docker compose up --build
 ```
 
-| Service   | URL |
-|-----------|-----|
-| Frontend  | http://localhost:5173 |
-| Backend API | http://localhost:8080 |
-| PostgreSQL | `localhost:5432` (user/password/db: `postgres` / `postgres` / `school_admission`) |
+| Service | Address |
+| --- | --- |
+| Frontend | http://localhost:5173 |
+| Backend | http://localhost:8080 |
+| PostgreSQL | localhost:5432 |
 
-Environment:
+The PostgreSQL defaults are username `postgres`, password `postgres`, database `school_admission`. A named volume preserves data across `docker compose down` and `up`; `down -v` deletes that volume.
 
-- `ConnectionStrings__Default` — set in `docker-compose.yml` for the backend
-- `VITE_API_URL` — baked into the frontend image at build time (default `http://localhost:8080`)
-- `HOLD_DURATION_SECONDS` — hold TTL (default `600`)
+Configuration:
 
-## Local development (without Docker)
+- `ConnectionStrings__Default`: Npgsql connection string.
+- `VITE_API_URL`: frontend API address, set at build time in Docker.
+- `HOLD_DURATION_SECONDS`: positive integer, default 600.
 
-1. Start PostgreSQL and set `ConnectionStrings__Default` in `backend/appsettings.Development.json` or env.
-2. Backend:
+## Windows local development
 
-   ```bash
-   cd backend
-   dotnet ef database update
-   dotnet run
-   ```
+Install .NET 8 or newer, Node.js and PostgreSQL. Create the `school_admission` database, then copy `.env.local.example` to `.env.local` and set the local database credentials.
 
-3. Frontend:
+From PowerShell:
 
-   ```bash
-   cd frontend
-   npm install
-   set VITE_API_URL=http://localhost:8080
-   npm run dev
-   ```
-
-## Tests
-
-```bash
-dotnet test SchoolAdmission.slnx
+```powershell
+.\scripts\run-local.ps1
 ```
 
-Integration and concurrency tests against PostgreSQL are scaffolded under `backend/tests/` — enable when a test database is available.
+From CMD or File Explorer, use `run.cmd`.
 
-## Repository layout
+The launcher restarts only this repository's previous servers, builds the API, waits for readiness, and starts Vite. If 8080 is busy it tries 5080, 8088 and 18080; if 5173 is busy it chooses another frontend port. The printed URLs are authoritative, and the frontend receives the selected API address.
 
+Stop project servers with:
+
+```powershell
+.\scripts\stop-local.ps1
 ```
-backend/
-  Api/              HTTP endpoints
-  Data/             EF Core entities & DbContext
-  Middleware/       API error handling
-  Models/           Request/response DTOs
-  Services/         Domain logic & hold expiry job
-  tests/            xUnit tests
-frontend/
-  src/api/          API client
-  src/context/      Student ID (localStorage)
-  src/pages/        UI screens
-docker-compose.yml
-ASSUMPTIONS.md
-AI_USAGE.md
+
+To run only the backend with local credentials and automatic port selection:
+
+~~~powershell
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+.\backend\run.ps1
+~~~
+
+Open the printed API URL followed by /swagger to inspect endpoints, for example http://localhost:5080/swagger. Use /classes for class data and /health for database readiness.
+
+For separate terminals, `dotnet run` in `backend` uses port 5080 and `npm run dev` in `frontend` defaults to that API address. Set `VITE_API_URL` if using another backend port. Environment values from root `.env.local` are loaded by the PowerShell launchers; plain `dotnet run` uses appsettings and its process environment.
+
+## Backend tests
+
+Use a separate test database. Tests deliberately ignore `ConnectionStrings__Default` and refuse any `TEST_CONNECTION` database name outside the `school_admission_test` prefix.
+
+On Windows:
+
+```powershell
+.\scripts\test-backend.ps1
 ```
+
+This helper reads local credentials, creates `school_admission_test_codex` if needed and runs the test project. It does not reset the development database. To use another dedicated test database, set `TEST_CONNECTION` first.
+
+On other platforms, create the test database and run:
+
+```sh
+TEST_CONNECTION='Host=localhost;Database=school_admission_test;Username=postgres;Password=postgres' dotnet test backend/tests/SchoolAdmission.Api.Tests/SchoolAdmission.Api.Tests.csproj
+```
+
+Test data inside the selected test database is reset between integration tests. Use the project path above with .NET 8; the optional root `.slnx` solution format needs a newer SDK.
+
+## Frontend checks
+
+Run from `frontend`:
+
+```sh
+npm ci
+npm run build
+npm run test:e2e
+```
+
+Browser tests start an isolated Vite server on port 5179 and intercept API requests with test data. They do not write to PostgreSQL. Windows uses installed Microsoft Edge; elsewhere run `npx playwright install chromium` first. `PLAYWRIGHT_CHANNEL` selects another installed browser channel.
+
+## API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | /classes | Create class |
+| GET | /classes | Class directory with seat counts |
+| GET | /classes/{classId} | Class and seat counts |
+| POST | /classes/{classId}/holds | Reserve seat |
+| GET | /holds/{holdId} | Reservation status |
+| POST | /holds/{holdId}/confirm | Mock payment and confirmation |
+| DELETE | /holds/{holdId} | Cancel active reservation |
+| GET | /me/holds | Current student's applications |
+
+Student operations use `X-Student-Id`. Statuses are `HELD`, `CONFIRMED`, `EXPIRED` and `CANCELLED`. Class/hold IDs are generated by the server. Errors include a JSON `message`.
+
+## Layout
+
+- `backend/Api`: endpoints
+- `backend/Services`: admission rules and automatic expiry
+- `backend/Data`: EF model and migrations
+- `backend/tests`: backend tests
+- `frontend/src`: screens, shared components, API client
+- `frontend/tests`: browser tests
+- `ASSUMPTIONS.md`: implementation decisions
+- `AI_USAGE.md`: AI assistance and verification
+
+## Real-data full-stack verification
+
+From PowerShell at the repository root, run `.\scripts\test-fullstack.ps1`. It creates a fresh isolated test database, starts two API instances and a separate frontend, seeds realistic class/application records, and runs 15 live browser/API checks. It does not use the development database as the test target.
+
+The runner stops its temporary servers afterwards. Results and screenshots are generated under `frontend/test-results-live/`, with an HTML report in `frontend/playwright-report-live/`. See [the latest data test report](docs/FULLSTACK_TEST_REPORT.md) for verified scenarios and evidence.

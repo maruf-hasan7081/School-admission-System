@@ -1,72 +1,56 @@
-# Run API + Vite without Docker (PostgreSQL required).
-# Usage: .\scripts\run-local.ps1
-
+# Run the API and Vite without Docker.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
-
-$envLocal = Join-Path $Root ".env.local"
-if (Test-Path $envLocal) {
-    Get-Content $envLocal | ForEach-Object {
-        if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
-        $pair = $_ -split '=', 2
-        if ($pair.Length -eq 2) {
-            Set-Item -Path "env:$($pair[0].Trim())" -Value $pair[1].Trim()
-        }
-    }
-}
-
-$connection = $env:ConnectionStrings__Default
-if (-not $connection) {
-    $connection = "Host=localhost;Port=5432;Database=school_admission;Username=postgres;Password=postgres"
-}
-
-$hostName = "localhost"
-$port = 5432
-foreach ($part in $connection.Split(';')) {
-    $kv = $part -split '=', 2
-    if ($kv.Length -ne 2) { continue }
-    switch ($kv[0].Trim().ToLowerInvariant()) {
-        "host" { $hostName = $kv[1].Trim() }
-        "port" { $port = [int]$kv[1].Trim() }
-    }
-}
-
-Write-Host "Checking PostgreSQL at ${hostName}:${port}..." -ForegroundColor Cyan
-try {
-    $tcp = New-Object System.Net.Sockets.TcpClient
-    $tcp.Connect($hostName, $port)
-    $tcp.Close()
-} catch {
-    Write-Host "PostgreSQL is not reachable at ${hostName}:${port}." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "You need EITHER:" -ForegroundColor Yellow
-    Write-Host "  A) Docker Desktop  -> Admin: .\scripts\install-docker.ps1  then .\run.ps1"
-    Write-Host "  B) PostgreSQL       -> Admin: .\scripts\install-postgres.ps1  then create DB + .env.local"
-    Write-Host ""
-    Write-Host "Connection string: $connection"
-    exit 1
-}
-
-$env:ConnectionStrings__Default = $connection
-$env:ASPNETCORE_URLS = "http://localhost:8080"
-if (-not $env:VITE_API_URL) { $env:VITE_API_URL = "http://localhost:8080" }
-
+. (Join-Path $PSScriptRoot "PortUtils.ps1")
+Import-LocalEnvironment -Root $Root
+# Restart this project's existing servers before selecting ports.
+Stop-LocalProjectProcesses -Root $Root
+$frontendPort = Resolve-FrontendPort
 $backendDir = Join-Path $Root "backend"
 $frontendDir = Join-Path $Root "frontend"
-
-Write-Host "Starting backend at http://localhost:8080 ..." -ForegroundColor Green
-$backend = Start-Process -FilePath "dotnet" -ArgumentList "run" -WorkingDirectory $backendDir -PassThru -NoNewWindow
-
-Start-Sleep -Seconds 4
-
-Write-Host "Starting frontend at http://localhost:5173 ..." -ForegroundColor Green
-Write-Host "Press Ctrl+C to stop (backend PID $($backend.Id) may need manual stop)." -ForegroundColor DarkGray
-
-Set-Location $frontendDir
+$apiPort = Resolve-ApiPort
+Set-ApiPortEnvironment -Port $apiPort
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+Write-Host "API: $env:VITE_API_URL" -ForegroundColor Cyan
+if (-not (Test-Path (Join-Path $frontendDir "node_modules"))) {
+    Push-Location $frontendDir
+    try {
+        npm.cmd ci
+        if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
+    } finally { Pop-Location }
+}
+dotnet build (Join-Path $backendDir "SchoolAdmission.Api.csproj")
+if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
+$apiDll = Join-Path $backendDir "bin\Debug\net8.0\SchoolAdmission.Api.dll"
+$startInfo = New-Object System.Diagnostics.ProcessStartInfo
+$startInfo.FileName = "dotnet"
+$startInfo.Arguments = '"' + $apiDll + '"'
+$startInfo.WorkingDirectory = $backendDir
+$startInfo.UseShellExecute = $false
+$startInfo.CreateNoWindow = $true
+$startInfo.EnvironmentVariables["Logging__LogLevel__Microsoft.EntityFrameworkCore"] = "Warning"
+$backend = [System.Diagnostics.Process]::Start($startInfo)
 try {
-    npm run dev
-} finally {
-    if (-not $backend.HasExited) {
-        Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue
+    Write-Host "Waiting for API readiness..."
+    $ready = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        if ($backend.HasExited) {
+            throw "Backend exited before startup. Check PostgreSQL, the database and .env.local credentials."
+        }
+        try {
+            $response = Invoke-WebRequest "http://127.0.0.1:$apiPort/classes" -UseBasicParsing -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { $ready = $true; break }
+        } catch { }
+        Start-Sleep -Milliseconds 500
     }
+    if (-not $ready) { throw "Backend did not become ready. Check the API output above." }
+    Write-Host "Backend ready: $env:VITE_API_URL" -ForegroundColor Green
+    Write-Host "Frontend: http://localhost:$frontendPort | Press Ctrl+C to stop." -ForegroundColor Green
+    Push-Location $frontendDir
+    try {
+        npm.cmd run dev -- --port $frontendPort --strictPort
+        if ($LASTEXITCODE -ne 0) { throw "Frontend startup failed (exit $LASTEXITCODE)." }
+    } finally { Pop-Location }
+} finally {
+    if (-not $backend.HasExited) { Stop-Process -Id $backend.Id -Force -ErrorAction SilentlyContinue }
 }

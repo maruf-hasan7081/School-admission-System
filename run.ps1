@@ -1,4 +1,5 @@
-# School Admission — Windows launcher (PowerShell)
+# School Admission - one command to run the app.
+# Docker if available; otherwise PostgreSQL + dotnet + Vite (local dev).
 # Usage: .\run.ps1
 
 $ErrorActionPreference = "Stop"
@@ -23,25 +24,14 @@ if (-not (Test-DockerOnPath)) {
 
 if (Test-DockerOnPath) {
     Set-Location $Root
-    Write-Host "Starting Docker Compose..." -ForegroundColor Green
+    Write-Host "Docker found - starting docker compose up --build" -ForegroundColor Green
     docker compose up --build
     exit $LASTEXITCODE
 }
 
+Write-Host "Docker not installed - starting local dev (PostgreSQL + API + UI)..." -ForegroundColor Cyan
+Write-Host "(Install Docker later for assignment submit: .\scripts\install-docker.ps1)" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "Docker was not found." -ForegroundColor Red
-Write-Host ""
-Write-Host "This project is meant to run with: docker compose up --build"
-Write-Host "Install Docker Desktop for Windows, then open a NEW terminal:"
-Write-Host "  https://docs.docker.com/desktop/setup/install/windows-install/"
-Write-Host ""
-Write-Host "Or install via winget (admin PowerShell):"
-Write-Host '  winget install -e --id Docker.DockerDesktop'
-Write-Host ""
-Write-Host "After Docker is running, from this folder:"
-Write-Host "  .\run.ps1"
-Write-Host ""
-Write-Host "Local dev without Docker (requires PostgreSQL on localhost:5432):" -ForegroundColor Yellow
-Write-Host "  .\scripts\run-local.ps1"
-Write-Host ""
-exit 1
+
+& (Join-Path $Root "scripts\run-local.ps1")
+exit $LASTEXITCODE
