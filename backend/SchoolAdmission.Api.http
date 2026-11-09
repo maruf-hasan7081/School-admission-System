@@ -1,6 +1,19 @@
-@SchoolAdmission.Api_HostAddress = http://localhost:5223
+@api = http://localhost:5080
+@student = 20152691234567890
 
-GET {{SchoolAdmission.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+GET {{api}}/classes
 
 ###
+
+POST {{api}}/classes
+Content-Type: application/json
+
+{
+  "name": "Class 6 - Morning Shift",
+  "totalSeats": 120
+}
+
+###
+
+GET {{api}}/me/holds
+X-Student-Id: {{student}}

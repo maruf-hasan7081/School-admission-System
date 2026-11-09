@@ -1,20 +1,13 @@
-using System.Text.RegularExpressions;
-
 namespace SchoolAdmission.Api.Services;
 
-public static partial class StudentIdValidator
+public static class StudentIdValidator
 {
-    [GeneratedRegex(@"^\d{17}$")]
-    private static partial Regex Pattern();
-
     public static bool IsValid(string? studentId) =>
-        !string.IsNullOrWhiteSpace(studentId) && Pattern().IsMatch(studentId);
+        studentId is { Length: 17 } && studentId.All(c => c is >= '0' and <= '9');
 
     public static void RequireValid(string? studentId)
     {
         if (!IsValid(studentId))
-        {
-            throw new ApiException(StatusCodes.Status400BadRequest, "Student ID must be exactly 17 digits.");
-        }
+            throw new ApiException(400, "Student ID must be exactly 17 digits (0-9).");
     }
 }

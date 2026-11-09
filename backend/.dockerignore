@@ -1,0 +1,10 @@
+bin/
+obj/
+**/bin/
+**/obj/
+tests/
+.env
+.env.*
+*.user
+*.log
+package-lock.json

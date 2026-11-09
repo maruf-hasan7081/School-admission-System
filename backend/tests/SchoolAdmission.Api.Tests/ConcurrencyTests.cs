@@ -1,47 +1,63 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
+using System.Text.Json;
+using SchoolAdmission.Api.Tests.Infrastructure;
+using Xunit;
 
 namespace SchoolAdmission.Api.Tests;
 
-/// <summary>
-/// Assignment requires a concurrency test; flesh this out once WebApplicationFactory uses a test database.
-/// </summary>
-public class ConcurrencyTests : IClassFixture<WebApplicationFactory<Program>>
+[Collection("Postgres")]
+public class ConcurrencyTests(PostgresFixture fixture) : IAsyncLifetime
 {
-    private readonly HttpClient client;
+    private readonly HttpClient client = fixture.Factory.CreateClient();
 
-    public ConcurrencyTests(WebApplicationFactory<Program> factory)
+    public Task InitializeAsync()
     {
-        client = factory.WithWebHostBuilder(_ => { }).CreateClient();
+        Assert.True(PostgresTestConfig.CanConnect(), "PostgreSQL required for concurrency test.");
+        return fixture.ResetDatabaseAsync();
     }
 
-    [Fact(Skip = "Wire up PostgreSQL test container or shared test DB, then assert holds never exceed seats.")]
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    [Fact]
     public async Task ParallelHolds_NeverExceedTotalSeats()
     {
         var create = await client.PostAsJsonAsync("/classes", new { name = "Load test", totalSeats = 5 });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
 
-        var classId = (await create.Content.ReadFromJsonAsync<CreatedClass>())!.Id;
-        var tasks = Enumerable.Range(0, 50).Select(i => HoldAsync(classId, i));
-        await Task.WhenAll(tasks);
+        var classId = JsonDocument.Parse(await create.Content.ReadAsStringAsync())
+            .RootElement.GetProperty("id").GetString()!;
 
-        var list = await client.GetFromJsonAsync<List<ClassRow>>("/classes");
-        var row = list!.First(c => c.Id == classId);
-        Assert.True(row.HeldSeats + row.ConfirmedSeats <= row.TotalSeats);
+        var tasks = Enumerable.Range(0, 80).Select(i => HoldAsync(classId, i));
+        var responses = await Task.WhenAll(tasks);
+
+        var created = responses.Count(r => r.StatusCode == HttpStatusCode.Created);
+        Assert.Equal(5, created);
+
+        var list = JsonDocument.Parse(await client.GetStringAsync("/classes")).RootElement;
+        JsonElement? row = null;
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.GetProperty("id").GetString() == classId)
+            {
+                row = item;
+                break;
+            }
+        }
+
+        Assert.NotNull(row);
+        var held = row.Value.GetProperty("heldSeats").GetInt32();
+        var confirmed = row.Value.GetProperty("confirmedSeats").GetInt32();
+        var total = row.Value.GetProperty("totalSeats").GetInt32();
+        Assert.Equal(5, held);
+        Assert.Equal(0, confirmed);
+        Assert.True(held + confirmed <= total);
     }
 
-    private Task<HttpResponseMessage> HoldAsync(string classId, int index) =>
-        client.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"/classes/{classId}/holds")
-        {
-            Headers = { { "X-Student-Id", (20152691234567800L + index).ToString() } },
-        });
-
-    private sealed record CreatedClass(string Id);
-    private sealed record ClassRow(
-        string Id,
-        int TotalSeats,
-        int HeldSeats,
-        int ConfirmedSeats,
-        int AvailableSeats);
+    private Task<HttpResponseMessage> HoldAsync(string classId, int index)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/classes/{classId}/holds");
+        request.Headers.Add("X-Student-Id", (20152691234567800L + index).ToString());
+        return client.SendAsync(request);
+    }
 }

@@ -7,8 +7,9 @@ public static class AdmissionEndpoints
 {
     public static void MapAdmissionEndpoints(this WebApplication app)
     {
-        app.MapPost("/classes", async (CreateClassRequest request, IAdmissionService service, CancellationToken ct) =>
+        app.MapPost("/classes", async (CreateClassRequest? request, IAdmissionService service, CancellationToken ct) =>
         {
+            if (request is null) throw new ApiException(400, "A JSON class request body is required.");
             var created = await service.CreateClassAsync(request, ct);
             return Results.Created($"/classes/{created.Id}", created);
         });
@@ -25,8 +26,8 @@ public static class AdmissionEndpoints
             IAdmissionService service,
             CancellationToken ct) =>
         {
-            var studentId = http.Request.Headers["X-Student-Id"].FirstOrDefault();
-            var hold = await service.CreateHoldAsync(classId, studentId ?? string.Empty, ct);
+            var studentId = RequireStudentId(http);
+            var hold = await service.CreateHoldAsync(classId, studentId, ct);
             return Results.Created($"/holds/{hold.HoldId}", hold);
         });
 
@@ -39,8 +40,8 @@ public static class AdmissionEndpoints
             IAdmissionService service,
             CancellationToken ct) =>
         {
-            var studentId = http.Request.Headers["X-Student-Id"].FirstOrDefault();
-            var result = await service.ConfirmHoldAsync(holdId, studentId ?? string.Empty, ct);
+            var studentId = RequireStudentId(http);
+            var result = await service.ConfirmHoldAsync(holdId, studentId, ct);
             return Results.Ok(result);
         });
 
@@ -50,8 +51,8 @@ public static class AdmissionEndpoints
             IAdmissionService service,
             CancellationToken ct) =>
         {
-            var studentId = http.Request.Headers["X-Student-Id"].FirstOrDefault();
-            await service.CancelHoldAsync(holdId, studentId ?? string.Empty, ct);
+            var studentId = RequireStudentId(http);
+            await service.CancelHoldAsync(holdId, studentId, ct);
             return Results.NoContent();
         });
 
@@ -60,8 +61,16 @@ public static class AdmissionEndpoints
             IAdmissionService service,
             CancellationToken ct) =>
         {
-            var studentId = http.Request.Headers["X-Student-Id"].FirstOrDefault();
-            return Results.Ok(await service.ListMyHoldsAsync(studentId ?? string.Empty, ct));
+            var studentId = RequireStudentId(http);
+            return Results.Ok(await service.ListMyHoldsAsync(studentId, ct));
         });
+    }
+    private static string RequireStudentId(HttpContext http)
+    {
+        var values = http.Request.Headers["X-Student-Id"];
+        if (values.Count != 1) throw new ApiException(400, "Exactly one X-Student-Id header is required.");
+        var studentId = values[0];
+        StudentIdValidator.RequireValid(studentId);
+        return studentId!;
     }
 }
