@@ -78,6 +78,37 @@ cd ..
 
 The full-stack runner requires the local PostgreSQL credentials in .env.local and installed frontend dependencies. Ports 5099, 5100 and 5181 must be available. It refuses to reuse occupied test ports.
 
+## Docker verification - 10 November 2026
+
+Completed at 22:21 Asia/Dhaka (16:21 UTC), using Docker Desktop 4.99.0, Docker Engine 29.9.3, Compose 5.7.0 and WSL 3.0.3.
+
+Both the .NET 8 backend image and the Node 22 Alpine/Nginx frontend image built successfully from the repository. PostgreSQL 16, the API and the frontend started successfully; API readiness and frontend HTTP checks returned 200.
+
+Local Oracle already occupied host port 8080, and native PostgreSQL occupied 5432. A generated local Compose override published API port 8088, retained frontend port 5173, and kept PostgreSQL internal to the Compose network. The base docker-compose.yml was validated and remains unchanged, publishing API port 8080.
+
+| Container scenario | Result |
+| --- | --- |
+| Class creation, reservation, confirmation and application history through the UI | PASS |
+| Nginx deep-link refresh restores the current reservation | PASS |
+| UI cancellation releases the reserved seat | PASS |
+| Invalid input returns 400; another student cannot confirm and receives 403 | PASS |
+| 24 simultaneous requests for 3 seats produce 3 reservations and 21 conflicts | PASS |
+| Eight repeated confirmations produce one confirmed seat | PASS |
+| Compose down followed by up recreates containers while preserving the named database volume | PASS |
+| Confirmed admission, cancelled history and class counts remain correct through API and UI after restart | PASS |
+
+The earlier 61-check result is retained as the 9 November baseline; these Docker checks are additional verification. Machine-readable local results are generated under backend/bin/DockerSetup and are excluded from Git as runtime artifacts. A separate full Edge process close/relaunch check also restored the saved Student ID and original reservation without creating a duplicate.
+
+To repeat the container workflow on a machine with the default host ports available:
+
+```sh
+docker compose up --build -d
+# Create a class, reserve a seat and confirm it through the UI.
+docker compose down
+docker compose up -d
+# Reopen the UI with the same Student ID and confirm that the admission remains.
+```
+
 ## Limits
 
-These results cover the exercised scenarios and local browser/runtime configuration. Docker runtime verification remains pending because Docker is not installed on this machine.
+These results cover the exercised scenarios on Windows/Edge and Linux Docker containers hosted by WSL2. Local Docker tests used a host-port override to coexist with Oracle and native PostgreSQL; the base Compose configuration retains API host port 8080.

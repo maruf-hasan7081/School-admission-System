@@ -15,11 +15,11 @@
 | Restart persistence | Verified | Independent host/restart tests using PostgreSQL |
 | Invalid input produces 4xx and visible errors | Verified | Backend validation and frontend browser tests |
 | Live seat counts and expiry | Implemented and browser-tested | Polling and local deadline handling |
-| Refresh/browser reopen recovery | Implemented and browser-tested | URL recovery and stored identity |
+| Refresh/browser reopen recovery | Verified | URL recovery, stored identity and a full browser-process close/relaunch check |
 | Frontend automated tests (bonus) | Verified | 10 browser tests with isolated API responses |
 | Multiple API instances (bonus) | Verified | Two hosts in tests and two live processes sharing PostgreSQL |
-| Dockerfiles + Compose + persistent volume | Present; runtime not verified here | Docker is not installed on this machine |
+| Dockerfiles + Compose + persistent volume | Verified with a local host-port override | Linux container builds, browser/API flows and retained data after Compose down/up |
 | README / assumptions / AI usage | Updated | Root documentation |
-| Public repository and assignment submission | User action | No publication or submission performed |
+| Public repository and assignment submission | Public repository verified; form submission remains a user action | Repository visibility and pushed commits checked through the GitHub API |
 
-Backend verification: 36 tests passed against an isolated test database. Frontend verification: production build and 10 browser tests passed. Docker runtime remains a separate verification step.
+Backend verification: 36 tests passed against an isolated test database. Frontend verification: production build, 10 regression browser tests and 15 live full-stack checks passed. Additional Docker builds, UI/API smoke checks and Compose down/up persistence passed on 10 November 2026. Local Docker verification used API host port 8088 to coexist with Oracle; the base Compose configuration still publishes port 8080.

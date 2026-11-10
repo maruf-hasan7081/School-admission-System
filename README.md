@@ -12,7 +12,7 @@ Each class/shift is a separate class with its own capacity. A student is identif
 
 ## Docker
 
-Start Docker Desktop on Windows, or Docker Engine on Linux, then run from the repository root:
+Start Docker Desktop on Windows, or Docker Engine on Linux, then run from the repository root. After installing Docker Desktop, reopen your terminal or VS Code so the updated Docker PATH is available:
 
 ```sh
 docker compose up --build
@@ -23,6 +23,8 @@ docker compose up --build
 | Frontend | http://localhost:5173 |
 | Backend | http://localhost:8080 |
 | PostgreSQL | localhost:5432 |
+
+Host ports 8080, 5173 and 5432 must be available for this default configuration.
 
 The PostgreSQL defaults are username `postgres`, password `postgres`, database `school_admission`. A named volume preserves data across `docker compose down` and `up`; `down -v` deletes that volume.
 
